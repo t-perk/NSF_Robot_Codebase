@@ -239,45 +239,6 @@ void PingUltrasonicSensor() {
   // }
 }
 
-// ////////////////////////////////////////////////////////////////////
-// // Function that detects if light is present
-// ////////////////////////////////////////////////////////////////////
-// bool isLight(int pin) {
-//   float light = getPinVoltage(pin);
-//   //Serial.println(light); // Use this line to test
-//   return (light > PHOTODIODE_LIGHT_THRESHOLD);
-// }
-
-// ////////////////////////////////////////////////////////////////////
-// // Function to read pin voltage
-// ////////////////////////////////////////////////////////////////////
-// float getPinVoltage(int pin) {
-//   //This function can be used for many different tasks in the labs
-//   //Study this line of code to understand what is going on!!
-//   //What does analogRead(pin) do?
-//   //Why is (float) needed?
-//   //Why divide by 1024?
-//   //Why multiply by 5?
-//   return 5 * (float)analogRead(pin) / 1024;
-// }
-
-// ////////////////////////////////////////////////////////////////////
-// // Function to determine if a button is pushed or not
-// ////////////////////////////////////////////////////////////////////
-// bool isButtonPushed(int button_pin) {
-//   //This function can be used to determine if a said button is pushed.
-//   //Remember that when the voltage is 0, it's only close to zero.
-//   //Hint: Call the getPinVoltage function and if that value is greater
-//   // than the BUTTON_THRESHOLD variable toward the top of the file, return true.
-//   if (getPinVoltage(button_pin) >= BUTTON_THRESHOLD) {
-//     return(true);
-//   }
-//   else {
-//     return (false);
-//   }
-
-// }
-
 ////////////////////////////////////////////////////////////////////
 // Function that detects if there is an obstacle in front of robot
 ////////////////////////////////////////////////////////////////////
@@ -308,7 +269,7 @@ void fsmCollisionDetection() {
   //Serial.println(collisionDetectionState); //uncomment for debugging
 
 
-  //   // Driving direction definitions
+  // Driving direction definitions
   // #define DRIVE_STOP      0
   // #define DRIVE_LEFT      1
   // #define DRIVE_RIGHT     2
@@ -379,57 +340,6 @@ void fsmCollisionDetection() {
   }
 }
 
-// ////////////////////////////////////////////////////////////////////
-// // State machine for cycling through the robot's speeds.
-// ////////////////////////////////////////////////////////////////////
-// void fsmChangeSpeed() {
-//   /*Implement in lab 4*/
-//    static int changeSpeedState = 0;
-
-//    switch(changeSpeedState)
-//    {
-//     case 0: // Speed Level 0
-//     //Serial.println("SPEED_STOP");
-//       ActionRobotSpeed = SPEED_STOP; 
-    
-//       //State transition
-//       changeSpeedState = 1; // Go to speed low
-//     break;
-
-//     case 1: // Speed Level 1
-//     //Serial.println("SPEED_LOW");
-//       ActionRobotSpeed = SPEED_LOW; 
-    
-//       //State transition
-//       changeSpeedState = 2; // Go to speed med
-//     break;
-
-//     case 2: // Speed Level 2
-//     //Serial.println("SPEED_MED");
-//       ActionRobotSpeed = SPEED_MED; 
-    
-//       //State transition
-//       changeSpeedState = 3; // Go to speed high
-//     break;
-
-//     case 3: // Speed Level 3
-//     //Serial.println("SPEED_HIGH");
-//       // Don’t forget to define ActionRobotSpeed
-//       ActionRobotSpeed = SPEED_HIGH; 
-    
-//       //State transition
-//       changeSpeedState = 0; // Go to speed stop
-//     break;
-
-//     default:
-//     {
-//       changeSpeedState = 0;
-//     }
-
-//    }
-
-// }
-
 /**********************************************************************************************************
   Robot ACTION - implementing the decisions from planning to specific actions
  ********************************************************************/
@@ -471,20 +381,3 @@ void RobotAction() {
       break;
   }
 }
-
-// /**********************************************************************************************************
-//   AUXILIARY functions that may be useful in performing diagnostics
-//  ********************************************************************/
-// // Function to turn LED on
-// void doTurnLedOn(int led_pin)
-// {
-//   digitalWrite(led_pin, HIGH);   // Turn on the LED
-//   /* Use knowledge from lab 1 to set the led_pin on */
-// }
-
-// // Function to turn LED off
-// void doTurnLedOff(int led_pin)
-// {
-//   /* Use knowledge from lab 1 to set the led_pin high */
-//   digitalWrite(led_pin, LOW);    // Turn off the LED
-// }
