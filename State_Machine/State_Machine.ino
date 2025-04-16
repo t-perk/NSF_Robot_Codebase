@@ -25,7 +25,7 @@ your sensors and servos. */
 #include <NewPing.h>
 #include <PWMServo.h>
 
-const int DebugStateOutput = true; // Change false to true for debug messages
+const int DebugStateOutput = false; // Change false to true for debug messages
 
 //
 // Compiler defines: the compiler replaces each name with its assignment
@@ -48,6 +48,11 @@ const int DebugStateOutput = true; // Change false to true for debug messages
 #define IN2 4 // right
 #define IN3 2 // left
 #define IN4 7 // left
+
+#define LINE_SENSOR_IN1 8 // far right
+#define LINE_SENSOR_IN2 9 // right
+#define LINE_SENSOR_IN3 10 // left
+#define LINE_SENSOR_IN4 11 // far left
 
 // Ultrasonic sensor pins
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
@@ -113,6 +118,12 @@ int r_IRAvoidanceSensorState;
 // Ultrasonic sensor state variable
 int UltrasonicDistance;
 
+// Line following IR sensors
+int Line_Sensor1;
+int Line_Sensor2;
+int Line_Sensor3;
+int Line_Sensor4;
+
 /***********************************************************/
 // Global variables that define ACTION and initialization
 
@@ -123,9 +134,22 @@ int ActionCollision = COLLISION_OFF;
 int ActionRobotDrive = DRIVE_STRAIGHT;
 // Speed
 // 130 - 255 are generally good on a full battery (on smooth surface)
-int ActionRobotSpeed = 130;
+int ActionRobotSpeed = 120;
+int ActionRobotTurnSpeed = 180;
 // Servo Action (using Definitions)
 int ActionServoMove =  SERVO_MOVE_STOP;
+
+// Flag for stopping the robot
+bool StopDebounce = false;
+int stopCounter = 0;
+
+// Time units to remain in stop state (approx. in ms)
+#define STOP_TIME 220
+
+bool lineFollowingDisabled = false;
+int lineFollowingDisabled_Count = 0;
+
+#define LINE_FOLLOWING_DISABLED_TIME 25
 
 /********************************************************************
   SETUP function - this gets executed at power up, or after a reset
@@ -150,6 +174,11 @@ void setup() {
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
+
+  pinMode(LINE_SENSOR_IN1, INPUT);
+  pinMode(LINE_SENSOR_IN2, INPUT);
+  pinMode(LINE_SENSOR_IN3, INPUT);
+  pinMode(LINE_SENSOR_IN4, INPUT);
   
   // //Set up servo
   // myServo.attach(SERVO_PIN);
@@ -158,6 +187,14 @@ void setup() {
   //Set up rangefinder
   pinMode(TRIGGER_PIN, OUTPUT); // pulse sent out through TRIGGER_PIN    
   pinMode(ECHO_PIN, INPUT); // return signal read through ECHO_PIN
+
+  // Setup stop condition variables
+  StopDebounce = false;
+  stopCounter = 0;
+
+  // Setup line following disabled variables
+  lineFollowingDisabled = false;
+  lineFollowingDisabled_Count = 0;
 }
 
 /********************************************************************
@@ -184,15 +221,24 @@ void loop() {
 
     Serial.print("isCollision state: ");
     Serial.println(SensedCollision);
+
+    Serial.print("IR Line Sensors: ");
+    Serial.print(Line_Sensor4);
+    Serial.print("--");
+    Serial.print(Line_Sensor3);
+    Serial.print("--");
+    Serial.print(Line_Sensor2);
+    Serial.print("--");
+    Serial.println(Line_Sensor1);
+
+    Serial.print("StopDebounce value: ");
+    Serial.println(StopDebounce);
   }
   
   RobotPlanning(); // PLANNING
   if (DebugStateOutput) {
     Serial.println("\n------------------------------");
     Serial.println("PLANNING");
-
-    Serial.print("ActionCollision: ");
-    Serial.println(ActionCollision);
 
     Serial.print("ActionRobotDrive: ");
     Serial.println(ActionRobotDrive);
@@ -206,6 +252,7 @@ void loop() {
   if (DebugStateOutput){
     delay(1000);
   }
+  // delay(1);
 }
 
 /**********************************************************************************************************
@@ -217,6 +264,11 @@ void RobotPerception() {
   
   l_IRAvoidanceSensorState = digitalRead(IR_AVOID_L);//The sensor on the left
   r_IRAvoidanceSensorState = digitalRead(IR_AVOID_R);//The sensor on the Right
+
+  Line_Sensor1 = digitalRead(LINE_SENSOR_IN1);//IN1
+  Line_Sensor2 = digitalRead(LINE_SENSOR_IN2);//IN2
+  Line_Sensor3 = digitalRead(LINE_SENSOR_IN3);//IN3
+  Line_Sensor4 = digitalRead(LINE_SENSOR_IN4);//IN4
 
   PingUltrasonicSensor();
 
@@ -265,24 +317,41 @@ void RobotPlanning(void) {
 ////////////////////////////////////////////////////////////////////
 void fsmCollisionDetection() {
   static int collisionDetectionState = 0;
-  static int driveState = 1;
-  //Serial.println(collisionDetectionState); //uncomment for debugging
+  static int driveState = 3;
 
+  // Handle stop condition
+  if (StopDebounce == true){
+    if (DebugStateOutput){
+      // Serial.println(stopCounter);
+    }
+
+    if (stopCounter >= STOP_TIME){
+      ActionRobotDrive = DRIVE_STRAIGHT;
+      stopCounter = 0;
+      StopDebounce = false;
+      // Disable line following for a period to ignore the 
+      // line immediately below the robot
+      lineFollowingDisabled = true;
+    } else {
+      ActionRobotDrive = DRIVE_STOP;
+      stopCounter++;
+      return;
+    }
+  }
 
   // Driving direction definitions
   // #define DRIVE_STOP      0
   // #define DRIVE_LEFT      1
   // #define DRIVE_RIGHT     2
   // #define DRIVE_STRAIGHT  3
+  
   switch (driveState){
     case DRIVE_STRAIGHT:
       ActionRobotDrive = DRIVE_STRAIGHT;
-
       //State transition logic
       if (SensedCollision == DETECTION_NO) {
         driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-      } else if (SensedCollision == DETECTION_YES)
-      {
+      } else if (SensedCollision == DETECTION_YES){
         if (!r_IRAvoidanceSensorState){
           driveState = DRIVE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
@@ -336,7 +405,55 @@ void fsmCollisionDetection() {
         driveState = DRIVE_STOP;
       }
       break;
+  }
 
+  //Line following code overwrites the standard obstacle avoidance code UNLESS we are intentionally ignoring it.
+  if (lineFollowingDisabled){
+    if (lineFollowingDisabled_Count >= LINE_FOLLOWING_DISABLED_TIME){
+      lineFollowingDisabled = false;
+      lineFollowingDisabled_Count = 0;
+      DoLineFollowing();
+    }else{
+      lineFollowingDisabled_Count++;
+    }
+  }else{
+    //If there's no feedback from the line following sensors, we do nothing
+    if (Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+      
+    }else{
+      DoLineFollowing();
+    }
+  }
+}
+
+void DoLineFollowing(){
+  if (DebugStateOutput) {
+    Serial.println("Do line following");
+  }
+  // Line_Sensor1 - Far right
+  // Line_Sensor2 - Mid right
+  // Line_Sensor3 - Mid left
+  // Line_Sensor4 - Far left
+  if(Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+    // forward();    
+    ActionRobotDrive = DRIVE_STRAIGHT;
+  }else if(Line_Sensor4 == HIGH && Line_Sensor3 == HIGH && Line_Sensor2 == HIGH && Line_Sensor1 == HIGH){
+    // stop();    
+    ActionRobotDrive = DRIVE_STOP;
+    StopDebounce = true;
+    // Enter state to wait for x seconds before going straight again
+  }else if(Line_Sensor4 == HIGH && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+    // left_M();
+    ActionRobotDrive = DRIVE_LEFT;
+  }else if(Line_Sensor4 == LOW && Line_Sensor3 == HIGH && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+    // left();
+    ActionRobotDrive = DRIVE_LEFT;
+  }else if(Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == HIGH && Line_Sensor1 == LOW){
+    // right();
+    ActionRobotDrive = DRIVE_RIGHT;
+  }else if(Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == HIGH){
+    // right_M();
+    ActionRobotDrive = DRIVE_RIGHT;
   }
 }
 
@@ -361,8 +478,8 @@ void RobotAction() {
       break;
 
     case DRIVE_RIGHT:
-      analogWrite(H_BRIDGE_ENA, ActionRobotSpeed);//Set the speed of ENA
-      analogWrite(H_BRIDGE_ENB, ActionRobotSpeed);//Set the speed of ENB
+      analogWrite(H_BRIDGE_ENA, ActionRobotTurnSpeed);//Set the speed of ENA
+      analogWrite(H_BRIDGE_ENB, ActionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, HIGH);
       digitalWrite(IN2, LOW);
       digitalWrite(IN3, HIGH);
@@ -371,8 +488,8 @@ void RobotAction() {
       break;
 
     case DRIVE_LEFT:
-      analogWrite(H_BRIDGE_ENA, ActionRobotSpeed);//Set the speed of ENA
-      analogWrite(H_BRIDGE_ENB, ActionRobotSpeed);//Set the speed of ENB
+      analogWrite(H_BRIDGE_ENA, ActionRobotTurnSpeed);//Set the speed of ENA
+      analogWrite(H_BRIDGE_ENB, ActionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
       digitalWrite(IN3, LOW);
