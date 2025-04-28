@@ -58,7 +58,7 @@ const int DebugStateOutput = true; // Change false to true for debug messages
 // Ultrasonic sensor pins
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 13  // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define ULTRASONIC_UPDATE_COUNT 10
+#define ULTRASONIC_UPDATE_COUNT 20
 
 // Servo pin
 #define SERVO_PIN A0
@@ -118,6 +118,7 @@ int leftUltrasonicDistance;
 int rightUltrasonicDistance;
 int updateUltrasonicSensorCounter = 0;
 bool sweepRequest = true;
+bool turnedLastStep = false;
 
 // Line following IR sensors
 int Line_Sensor1;
@@ -494,14 +495,17 @@ bool isLineDetected(){
 }
 
 void updateDriveState(){
-  if ((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)){
+  if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedLastStep){
     ActionRobotDrive = DRIVE_STRAIGHT;
+    turnedLastStep = false;
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
     ActionRobotDrive = DRIVE_LEFT;
     ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    turnedLastStep = true;
   }else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
     ActionRobotDrive = DRIVE_RIGHT;
     ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    turnedLastStep = true;
   }
 }
 
