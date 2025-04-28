@@ -65,8 +65,8 @@ const int DebugStateOutput = true; // Change false to true for debug messages
 
 // Parameters for servo control as well as instantiation
 #define SERVO_START_ANGLE 90
-#define SERVO_LEFT_LIMIT 180
-#define SERVO_RIGHT_LIMIT 0
+#define SERVO_LEFT_LIMIT 180//135
+#define SERVO_RIGHT_LIMIT 0//45
 Servo myServo;
 
 /***********************************************************/
@@ -135,15 +135,19 @@ int ActionCollision = COLLISION_OFF;
 int ActionRobotDrive = DRIVE_STRAIGHT;
 // Speed
 // 130 - 255 are generally good on a full battery (on smooth surface)
-int ActionRobotSpeed = 120;
-int ActionRobotTurnSpeed = 180;
+#define SPEED_STRAIGHT_DEFAULT 140
+#define SPEED_TURN_DEFAULT 220
+#define SPEED_TURN_FAST 240
+
+int ActionRobotSpeed = SPEED_STRAIGHT_DEFAULT; // Default is 120
+int ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
 // Flag for stopping the robot
 int lineFollowing_StopCounter = 0;
-int lineFollowing_ForwardCounter
+int lineFollowing_ForwardCounter = 0;
 
-#define LINEFOLLOWING_STOP_TIME 5
-#define LINEFOLLOWING_FORWARD_TIME 5
+#define LINEFOLLOWING_STOP_TIME 100
+#define LINEFOLLOWING_FORWARD_TIME 10
 
 bool lineFollowingDisabled = false;
 int lineFollowingDisabled_Count = 0;
@@ -225,8 +229,13 @@ void loop() {
     Serial.print("--");
     Serial.println(Line_Sensor1);
 
-    Serial.print("lineFollowing_StopCounter value: ");
-    Serial.println(lineFollowing_StopCounter);
+    Serial.print("LF_State: ");
+    Serial.print(lineFollowingState);
+    Serial.print(" Stop: ");
+    Serial.print(lineFollowing_StopCounter);
+    Serial.print(" Foward: ");
+    Serial.println(lineFollowing_ForwardCounter);
+    
   }
   
   RobotPlanning(); // PLANNING
@@ -237,8 +246,8 @@ void loop() {
     Serial.print("ActionRobotDrive: ");
     Serial.println(ActionRobotDrive);
 
-    Serial.print("ActionRobotSpeed: ");
-    Serial.println(ActionRobotSpeed);
+    // Serial.print("ActionRobotSpeed: ");
+    // Serial.println(ActionRobotSpeed);
   }
 
   RobotAction(); // ACTION
@@ -277,8 +286,6 @@ void RobotPerception() {
     UltrasonicSensorSweep();
     updateUltrasonicSensorCounter = 0;
     sweepRequest = false;
-    Serial.println("SWEEP REQUEST LOW");
-
   }else{
     PingUltrasonicSensor();
   }
@@ -361,25 +368,6 @@ void fsmCollisionDetection() {
   static int collisionDetectionState = 0;
   static int driveState = 3;
 
-  // // Handle stop condition
-  // if (StopDebounce == true){
-  //   if (DebugStateOutput){
-  //     // Serial.println(stopCounter);
-  //   }
-  //   if (stopCounter >= STOP_TIME){
-  //     ActionRobotDrive = DRIVE_STRAIGHT;
-  //     stopCounter = 0;
-  //     StopDebounce = false;
-  //     // Disable line following for a period to ignore the 
-  //     // line immediately below the robot
-  //     lineFollowingDisabled = true;
-  //   } else {
-  //     ActionRobotDrive = DRIVE_STOP;
-  //     stopCounter++;
-  //     return;
-  //   }
-  // }
-
   // Driving direction definitions
   // #define DRIVE_STOP      0
   // #define DRIVE_LEFT      1
@@ -388,13 +376,12 @@ void fsmCollisionDetection() {
 
   //We only want to follow the sound sweep information if there 
   //is not a line currently being detected.
-  if (lineFollowingState == OFFLINE && !isCollision()){
+  if (!isLineDetected() && lineFollowingState == OFFLINE && !SensedCollision){
     // Serial.println("############drive state##############");
     if (updateUltrasonicSensorCounter >= ULTRASONIC_UPDATE_COUNT){
       ActionRobotDrive = DRIVE_STOP;
       if (!sweepRequest){
         sweepRequest = true;
-        Serial.println("SWEEP REQUEST HIGH");
       }
       return;
     }else{
@@ -403,110 +390,99 @@ void fsmCollisionDetection() {
     }
   }
 
-  // switch (driveState){
-  //   case DRIVE_STRAIGHT:
-  //     ActionRobotDrive = DRIVE_STRAIGHT;
-  //     //State transition logic
-  //     if (SensedCollision == DETECTION_NO) {
-  //       driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-  //     } else if (SensedCollision == DETECTION_YES){
-  //       if (!r_IRAvoidanceSensorState){
-  //         driveState = DRIVE_LEFT;
-  //       } else if (!l_IRAvoidanceSensorState){
-  //         driveState = DRIVE_RIGHT;
-  //       }
-  //     }
-  //     break;
+  if ((isLineDetected() || lineFollowingState == ONLINE || lineFollowingState == LOCKED) && !SensedCollision){
+    if (lineFollowingState == OFFLINE){
+      lineFollowingState = ONLINE;
+      DoLineFollowing();
+    }else if (lineFollowingState == ONLINE){
+      DoLineFollowing();
 
-  //   case DRIVE_LEFT:
-  //     ActionRobotDrive = DRIVE_LEFT;
+    }else if (lineFollowingState == LOCKED){
+      if (lineFollowing_StopCounter <= LINEFOLLOWING_STOP_TIME){
+        ActionRobotDrive = DRIVE_STOP;
+        lineFollowing_StopCounter++;
+        return;
+      } else if (lineFollowing_ForwardCounter <= LINEFOLLOWING_FORWARD_TIME){
+        Serial.println("FORWARD COUNTER");
+        ActionRobotDrive = DRIVE_STRAIGHT;
+        lineFollowing_ForwardCounter++;
+        return;
+      } else {
+        lineFollowingState = OFFLINE;
+        lineFollowing_ForwardCounter = 0;
+        lineFollowing_StopCounter = 0;
+      }
+    }
+  }
 
-  //     //State transition logic
-  //     if (SensedCollision == DETECTION_NO) {
-  //       driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-  //     } else if (SensedCollision == DETECTION_YES)
-  //     {
-  //       if (!r_IRAvoidanceSensorState){
-  //         driveState = DRIVE_LEFT;
-  //       } else if (!l_IRAvoidanceSensorState){
-  //         if (!r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
-  //           driveState = DRIVE_LEFT;
-  //         } else if (r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
-  //           driveState = DRIVE_RIGHT;
-  //         }
-  //       }
-  //     }
-  //     break;
+  if (SensedCollision){
+    lineFollowingState = OFFLINE;
+    lineFollowing_ForwardCounter = 0;
+    lineFollowing_StopCounter = 0;
 
-  //     case DRIVE_RIGHT:
-  //     ActionRobotDrive = DRIVE_RIGHT;
+    switch (driveState){
+    case DRIVE_STRAIGHT:
+      ActionRobotDrive = DRIVE_STRAIGHT;
+      //State transition logic
+      if (SensedCollision == DETECTION_NO) {
+        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+      } else if (SensedCollision == DETECTION_YES){
+        if (!r_IRAvoidanceSensorState){
+          driveState = DRIVE_LEFT;
+        } else if (!l_IRAvoidanceSensorState){
+          driveState = DRIVE_RIGHT;
+        }
+      }
+      break;
 
-  //     //State transition logic
-  //     if (SensedCollision == DETECTION_NO) {
-  //       driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-  //     } else if (SensedCollision == DETECTION_YES)
-  //     {
-  //       if (!l_IRAvoidanceSensorState){
-  //         driveState = DRIVE_RIGHT;
-  //       } else if (!r_IRAvoidanceSensorState){
-  //         if (!l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
-  //           driveState = DRIVE_RIGHT;
-  //         } else if (l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
-  //           driveState = DRIVE_LEFT;
-  //         }
-  //       }
-  //     }
-  //     break;
+    case DRIVE_LEFT:
+      ActionRobotDrive = DRIVE_LEFT;
+      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
-  //     default: // error handling
-  //     {
-  //       driveState = DRIVE_STOP;
-  //     }
-  //     break;
-  // }
+      //State transition logic
+      if (SensedCollision == DETECTION_NO) {
+        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+      } else if (SensedCollision == DETECTION_YES)
+      {
+        if (!r_IRAvoidanceSensorState){
+          driveState = DRIVE_LEFT;
+        } else if (!l_IRAvoidanceSensorState){
+          if (!r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
+            driveState = DRIVE_LEFT;
+          } else if (r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
+            driveState = DRIVE_RIGHT;
+          }
+        }
+      }
+      break;
 
-  // if (isLineDetected() && !isCollision()){
-  //   if (lineFollowingState == OFFLINE){
-  //     lineFollowingState = ONLINE;
-  //     DoLineFollowing();
-  //   }else if (lineFollowingState = ONLINE){
-  //     DoLineFollowing();
+      case DRIVE_RIGHT:
+      ActionRobotDrive = DRIVE_RIGHT;
+      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
-  //   }else if (lineFollowingState = LOCKED){
-  //     if (lineFollowing_StopCounter <= LINEFOLLOWING_STOP_TIME){
-  //       ActionRobotDrive = DRIVE_STOP;
-  //       lineFollowing_StopCounter++;
-  //       return;
-  //     } else if (lineFollowing_ForwardCounter <= LINEFOLLOWING_FORWARD_TIME){
-  //       ActionRobotDrive = DRIVE_STRAIGHT;
-  //       lineFollowing_ForwardCounter++;
-  //       return;
-  //     } else {
-  //       lineFollowingState = OFFLINE;
-  //       lineFollowing_ForwardCounter = 0;
-  //       lineFollowing_StopCounter = 0;
-  //     }
-  //   }
-  // }
+      //State transition logic
+      if (SensedCollision == DETECTION_NO) {
+        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+      } else if (SensedCollision == DETECTION_YES){
+        if (!l_IRAvoidanceSensorState){
+          driveState = DRIVE_RIGHT;
+        } else if (!r_IRAvoidanceSensorState){
+          if (!l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
+            driveState = DRIVE_RIGHT;
+          } else if (l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
+            driveState = DRIVE_LEFT;
+          }
+        }
+      }
+      break;
 
-  // TODO: HERE
-  //Line following code overwrites the standard obstacle avoidance code UNLESS we are intentionally ignoring it.
-  // if (lineFollowingDisabled){
-  //   if (lineFollowingDisabled_Count >= LINE_FOLLOWING_DISABLED_TIME){
-  //     lineFollowingDisabled = false;
-  //     lineFollowingDisabled_Count = 0;
-  //     DoLineFollowing();
-  //   }else{
-  //     lineFollowingDisabled_Count++;
-  //   }
-  // }else{
-  //   //If there's no feedback from the line following sensors, we do nothing
-  //   if (isLineDetected()){
-  //     Serial.println("DO LINE FOLLOWING");
-  //     DoLineFollowing();
-  //   }else{
-  //   }
-  // }
+      default: // error handling
+      {
+        driveState = DRIVE_STOP;
+      }
+      break;
+    }
+  }
 }
 
 bool isLineDetected(){
@@ -522,8 +498,10 @@ void updateDriveState(){
     ActionRobotDrive = DRIVE_STRAIGHT;
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
     ActionRobotDrive = DRIVE_LEFT;
+    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
   }else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
     ActionRobotDrive = DRIVE_RIGHT;
+    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
   }
 }
 
@@ -541,20 +519,48 @@ void DoLineFollowing(){
   }else if(Line_Sensor4 == HIGH && Line_Sensor3 == HIGH && Line_Sensor2 == HIGH && Line_Sensor1 == HIGH){
     // stop();    
     ActionRobotDrive = DRIVE_STOP;
+    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     lineFollowingState = LOCKED;
-    // Enter state to wait for x seconds before going straight again
-  }else if((Line_Sensor4 == HIGH && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW) || (Line_Sensor4 == LOW && Line_Sensor3 == HIGH)){
-    // left_M();
+
+  }else if(Line_Sensor3 == HIGH || Line_Sensor4 == HIGH){
     ActionRobotDrive = DRIVE_LEFT;
-  }else if((Line_Sensor4 == LOW && Line_Sensor3 == HIGH && Line_Sensor2 == LOW && Line_Sensor1 == LOW) || (Line_Sensor4 == HIGH && Line_Sensor3 == HIGH)){
-    // left();
+    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    if (Line_Sensor2 == HIGH){
+      ActionRobotDrive = DRIVE_STRAIGHT;
+      // If two of the opposing sensors are high, then that side outvotes the other side
+      if (Line_Sensor1 == HIGH){
+        ActionRobotDrive == DRIVE_RIGHT;
+        ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }
+    if (Line_Sensor4 == HIGH){
+      ActionRobotDrive = DRIVE_LEFT;
+      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    }
+  } else if (Line_Sensor2 == HIGH || Line_Sensor1 == HIGH){
+    ActionRobotDrive = DRIVE_RIGHT;
+    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    if (Line_Sensor3 == HIGH){
+      ActionRobotDrive = DRIVE_STRAIGHT;
+      // If two of the opposing sensors are high, then that side outvotes the other side
+      if (Line_Sensor4 == HIGH){
+        ActionRobotDrive == DRIVE_LEFT;
+        ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }
+    if (Line_Sensor1 == HIGH){
+      ActionRobotDrive = DRIVE_RIGHT;
+      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    }
+  }
+  if (Line_Sensor4 == HIGH && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
     ActionRobotDrive = DRIVE_LEFT;
-  }else if((Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == HIGH && Line_Sensor1 == LOW) || (Line_Sensor2 == HIGH && Line_Sensor1 == HIGH)){
-    // right();
+    ActionRobotTurnSpeed = SPEED_TURN_FAST;
+  }
+
+  if (Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == HIGH){
     ActionRobotDrive = DRIVE_RIGHT;
-  }else if((Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == HIGH) || (Line_Sensor2 == HIGH && Line_Sensor1 == HIGH)){
-    // right_M();
-    ActionRobotDrive = DRIVE_RIGHT;
+    ActionRobotTurnSpeed = SPEED_TURN_FAST;
   }
 }
 
