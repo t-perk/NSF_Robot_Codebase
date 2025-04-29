@@ -25,7 +25,7 @@ your sensors and servos. */
 // #include <PWMServo.h>
 #include <Servo.h>
 
-const int DebugStateOutput = true; // Change false to true for debug messages
+const int debugStateOutput = true; // Change false to true for debug messages
 
 //
 // Compiler defines: the compiler replaces each name with its assignment
@@ -77,7 +77,7 @@ Servo myServo;
 // Maximum distance we want to ping for (in centimeters). 
 #define MAX_DISTANCE 400 
 
-// Parameter to define when the ultrasonic sensor detects a collision - Lab 6
+// Parameter to define when the ultrasonic sensor detects a collision
 #define STOP_DISTANCE 20
 
 /***********************************************************/
@@ -86,11 +86,14 @@ Servo myServo;
 #define DETECTION_NO    0
 #define DETECTION_YES   1
 
-// Motor speed definitions - Lab 4
+// Motor speed definitions
+// 130 - 255 are generally good on a full battery (on smooth surface)
+// 160 - 255 good on full battery (with carpet)
 #define SPEED_STOP      0
-#define SPEED_LOW       (int) (140 + 125 * 0.33)
-#define SPEED_MED       (int) (140 + 125 * 0.66)
-#define SPEED_HIGH      (int) (140 + 125 * 1)
+#define SPEED_STRAIGHT_DEFAULT 140
+#define SPEED_TURN_SLOW 180 // Previously 220
+#define SPEED_TURN_DEFAULT 220 // Previously 220
+#define SPEED_TURN_FAST 240
 
 // Collision definitions
 #define COLLISION_OFF 0
@@ -106,7 +109,7 @@ Servo myServo;
 // Global variables that define PERCEPTION and initialization
 
 // Collision (using Definitions)
-int SensedCollision;
+int sensedCollision;
 
 // IR avoidance state variables
 int l_IRAvoidanceSensorState;
@@ -121,42 +124,39 @@ bool sweepRequest = true;
 bool turnedLastStep = false;
 
 // Line following IR sensors
-int Line_Sensor1;
-int Line_Sensor2;
-int Line_Sensor3;
-int Line_Sensor4;
-
-/***********************************************************/
-// Global variables that define ACTION and initialization
-
-// Collision Actions (using Definitions)
-int ActionCollision = COLLISION_OFF;
-
-// Main motors Action (using Definitions)
-int ActionRobotDrive = DRIVE_STRAIGHT;
-// Speed
-// 130 - 255 are generally good on a full battery (on smooth surface)
-#define SPEED_STRAIGHT_DEFAULT 140
-#define SPEED_TURN_SLOW 180 // Previously 220
-#define SPEED_TURN_DEFAULT 220 // Previously 220
-#define SPEED_TURN_FAST 240
-
-int ActionRobotSpeed = SPEED_STRAIGHT_DEFAULT; // Default is 120
-int ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+int lineSensor1;
+int lineSensor2;
+int lineSensor3;
+int lineSensor4;
 
 // Flag for stopping the robot
 int lineFollowing_StopCounter = 0;
 int lineFollowing_ForwardCounter = 0;
 
-#define LINEFOLLOWING_STOP_TIME 100
-#define LINEFOLLOWING_FORWARD_TIME 5
+#define LINEFOLLOWING_STOP_COUNT 100
+#define LINEFOLLOWING_FORWARD_COUNT 5
 
 bool lineFollowingDisabled = false;
 int lineFollowingDisabled_Count = 0;
 int lineFollowingState = 0;
+
+// Line following states
 #define OFFLINE 0
 #define ONLINE 1
 #define LOCKED 2
+
+/***********************************************************/
+// Global variables that define ACTION and initialization
+
+// Collision Actions (using Definitions)
+int actionCollision = COLLISION_OFF;
+
+// Main motors Action (using Definitions)
+int actionRobotDrive = DRIVE_STRAIGHT;
+
+int actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
+int actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+
 /********************************************************************
   SETUP function - this gets executed at power up, or after a reset
  ********************************************************************/
@@ -168,7 +168,7 @@ void setup() {
   pinMode(IR_AVOID_R, INPUT);
 
   // Initialize perception state variables
-  SensedCollision = DETECTION_NO;
+  sensedCollision = DETECTION_NO;
   l_IRAvoidanceSensorState = 0;
   r_IRAvoidanceSensorState = 0;
   straightUltrasonicDistance = 0;
@@ -202,12 +202,12 @@ void setup() {
   power off or reset. - Notice: PERCEPTION, PLANNING, ACTION
  ********************************************************************/
 void loop() {
-  // This DebugStateOutput flag can be used to easily turn on the
+  // This debugStateOutput flag can be used to easily turn on the
   // serial debugging to know what the robot is perceiving and what
   // actions the robot wants to take.
 
-  RobotPerception(); // PERCEPTION
-  if (DebugStateOutput) {
+  robot_perception(); // PERCEPTION
+  if (debugStateOutput) {
     Serial.println("\n------------------------------");
     Serial.println("Perception:");
     
@@ -219,17 +219,17 @@ void loop() {
     Serial.print("Ultrasonic range: ");
     Serial.println(straightUltrasonicDistance);
 
-    Serial.print("isCollision state: ");
-    Serial.println(SensedCollision);
+    Serial.print("is_collision state: ");
+    Serial.println(sensedCollision);
 
     Serial.print("IR Line Sensors: ");
-    Serial.print(Line_Sensor4);
+    Serial.print(lineSensor4);
     Serial.print("--");
-    Serial.print(Line_Sensor3);
+    Serial.print(lineSensor3);
     Serial.print("--");
-    Serial.print(Line_Sensor2);
+    Serial.print(lineSensor2);
     Serial.print("--");
-    Serial.println(Line_Sensor1);
+    Serial.println(lineSensor1);
 
     Serial.print("LF_State: ");
     Serial.print(lineFollowingState);
@@ -240,21 +240,18 @@ void loop() {
     
   }
   
-  RobotPlanning(); // PLANNING
-  if (DebugStateOutput) {
+  robot_planning(); // PLANNING
+  if (debugStateOutput) {
     Serial.println("\n------------------------------");
     Serial.println("PLANNING");
 
-    Serial.print("ActionRobotDrive: ");
-    Serial.println(ActionRobotDrive);
-
-    // Serial.print("ActionRobotSpeed: ");
-    // Serial.println(ActionRobotSpeed);
+    Serial.print("actionRobotDrive: ");
+    Serial.println(actionRobotDrive);
   }
 
-  RobotAction(); // ACTION
+  robot_action(); // ACTION
 
-  if (DebugStateOutput){
+  if (debugStateOutput){
     delay(1000);
   }
   // delay(1);
@@ -263,43 +260,37 @@ void loop() {
 /**********************************************************************************************************
   Robot PERCEPTION - all of the sensing
  ********************************************************************/
-void RobotPerception() {
+void robot_perception() {
   // This function polls all of the sensors and then assigns sensor outputs
   // that can be used by the robot in subsequent stages
   
   l_IRAvoidanceSensorState = digitalRead(IR_AVOID_L);//The sensor on the left
   r_IRAvoidanceSensorState = digitalRead(IR_AVOID_R);//The sensor on the Right
 
-  Line_Sensor1 = digitalRead(LINE_SENSOR_IN1);//IN1
-  Line_Sensor2 = digitalRead(LINE_SENSOR_IN2);//IN2
-  Line_Sensor3 = digitalRead(LINE_SENSOR_IN3);//IN3
-  Line_Sensor4 = digitalRead(LINE_SENSOR_IN4);//IN4
+  lineSensor1 = digitalRead(LINE_SENSOR_IN1);//IN1
+  lineSensor2 = digitalRead(LINE_SENSOR_IN2);//IN2
+  lineSensor3 = digitalRead(LINE_SENSOR_IN3);//IN3
+  lineSensor4 = digitalRead(LINE_SENSOR_IN4);//IN4
 
-  // if (updateUltrasonicSensorCounter > ULTRASONIC_UPDATE_COUNT){
-  //   UltrasonicSensorSweep();
-  //   updateUltrasonicSensorCounter = 0;
-  // } else {
-  //   updateUltrasonicSensorCounter++;
-  //   PingUltrasonicSensor();
-  // }
-
-  // If a sweep request occurs, check to see if it has already been performed. If so, set the 
+  // If a sweep request == true, perform sweep and reset counter
   if (sweepRequest){
-    UltrasonicSensorSweep();
+    ultrasonic_sensor_sweep();
     updateUltrasonicSensorCounter = 0;
     sweepRequest = false;
   }else{
-    PingUltrasonicSensor();
+    ping_ultrasonic_sensor();
   }
 
-  Serial.print("UltrasonicSensorCounter: ");
-  Serial.println(updateUltrasonicSensorCounter);
+  if (debugStateOutput){
+    Serial.print("UltrasonicSensorCounter: ");
+    Serial.println(updateUltrasonicSensorCounter);
+  }
 
   // Collision Sensor
-  if (isCollision()) {   // Add code in isCollision() function for lab 2 milestone 1
-    SensedCollision = DETECTION_YES;
+  if (is_collision()) {   // Add code in is_collision() function for lab 2 milestone 1
+    sensedCollision = DETECTION_YES;
   } else {
-    SensedCollision = DETECTION_NO;
+    sensedCollision = DETECTION_NO;
   }
 }
 
@@ -308,44 +299,56 @@ void RobotPerception() {
 ////////////////////////////////////////////////////////////////////
 static NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
-void UltrasonicSensorSweep(){
-  Serial.print("Sound Sweep.");
+// ultrasonic_sensor_sweep
+// Swivel the servo to gauge which direction has the most room
+void ultrasonic_sensor_sweep(){
   myServo.write(SERVO_LEFT_LIMIT);
   delay(700); // Wait for the servo to reach its position
   leftUltrasonicDistance = sonar.ping_cm();
   delay(50);
-  Serial.print(" L: ");
-  Serial.print(leftUltrasonicDistance);
+
+  if (debugStateOutput){
+    Serial.print(" L: ");
+    Serial.print(leftUltrasonicDistance);
+  }
 
   myServo.write(SERVO_START_ANGLE);
   delay(700);
   straightUltrasonicDistance = sonar.ping_cm();
   delay(50);
-  Serial.print(" S: ");
-  Serial.print(straightUltrasonicDistance);  
+
+  if (debugStateOutput){
+    Serial.print(" S: ");
+    Serial.print(straightUltrasonicDistance); 
+  }
 
   myServo.write(SERVO_RIGHT_LIMIT);
   delay(700);
   rightUltrasonicDistance = sonar.ping_cm();
   delay(50);
-  Serial.print(" R: ");
-  Serial.println(rightUltrasonicDistance);  
+
+  if (debugStateOutput){
+    Serial.print(" R: ");
+    Serial.println(rightUltrasonicDistance);
+  }  
 
   // Return to the front
   myServo.write(SERVO_START_ANGLE);
   delay(700);
 }
 
-void PingUltrasonicSensor() {
+void ping_ultrasonic_sensor() {
   myServo.write(SERVO_START_ANGLE);
   straightUltrasonicDistance = sonar.ping_cm();
-  Serial.println(straightUltrasonicDistance);  
+  if (debugStateOutput){
+    Serial.println(straightUltrasonicDistance);
+  }  
 }
 
 ////////////////////////////////////////////////////////////////////
 // Function that detects if there is an obstacle in front of robot
 ////////////////////////////////////////////////////////////////////
-bool isCollision() {
+bool is_collision() {
   if (l_IRAvoidanceSensorState == 0 || r_IRAvoidanceSensorState == 0) {
     return true;
   } else {
@@ -356,17 +359,17 @@ bool isCollision() {
 /**********************************************************************************************************
   Robot PLANNING - using the sensing to make decisions
  **********************************************************************************************************/
-void RobotPlanning(void) {
+void robot_planning(void) {
   // The planning FSMs that are used by the robot to assign actions
   // based on the sensing from the Perception stage.
-  fsmCollisionDetection(); // Milestone 1
+  fsm_collision_detection(); // Milestone 1
 }
 
 ////////////////////////////////////////////////////////////////////
 // State machine for detecting collisions, and stopping the robot
 // if necessary.
 ////////////////////////////////////////////////////////////////////
-void fsmCollisionDetection() {
+void fsm_collision_detection() {
   static int collisionDetectionState = 0;
   static int driveState = 3;
 
@@ -376,37 +379,36 @@ void fsmCollisionDetection() {
   // #define DRIVE_RIGHT     2
   // #define DRIVE_STRAIGHT  3
 
-  //We only want to follow the sound sweep information if there 
-  //is not a line currently being detected.
-  if (!isLineDetected() && lineFollowingState == OFFLINE && !SensedCollision){
-    // Serial.println("############drive state##############");
+  // We only want to follow the sound sweep information if there 
+  // is not a line currently being detected.
+  if (!is_line_detected() && lineFollowingState == OFFLINE && !sensedCollision){
     if (updateUltrasonicSensorCounter >= ULTRASONIC_UPDATE_COUNT){
-      ActionRobotDrive = DRIVE_STOP;
+      actionRobotDrive = DRIVE_STOP;
       if (!sweepRequest){
         sweepRequest = true;
       }
       return;
     }else{
-      updateDriveState();
+      update_drive_state();
       updateUltrasonicSensorCounter++;
     }
   }
 
-  if ((isLineDetected() || lineFollowingState == ONLINE || lineFollowingState == LOCKED) && !SensedCollision){
+  // Line following logic depending on line following state
+  if ((is_line_detected() || lineFollowingState == ONLINE || lineFollowingState == LOCKED) && !sensedCollision){
     if (lineFollowingState == OFFLINE){
       lineFollowingState = ONLINE;
-      DoLineFollowing();
+      do_line_following();
     }else if (lineFollowingState == ONLINE){
-      DoLineFollowing();
+      do_line_following();
 
     }else if (lineFollowingState == LOCKED){
-      if (lineFollowing_StopCounter <= LINEFOLLOWING_STOP_TIME){
-        ActionRobotDrive = DRIVE_STOP;
+      if (lineFollowing_StopCounter <= LINEFOLLOWING_STOP_COUNT){
+        actionRobotDrive = DRIVE_STOP;
         lineFollowing_StopCounter++;
         return;
-      } else if (lineFollowing_ForwardCounter <= LINEFOLLOWING_FORWARD_TIME){
-        Serial.println("FORWARD COUNTER");
-        ActionRobotDrive = DRIVE_STRAIGHT;
+      } else if (lineFollowing_ForwardCounter <= LINEFOLLOWING_FORWARD_COUNT){
+        actionRobotDrive = DRIVE_STRAIGHT;
         lineFollowing_ForwardCounter++;
         return;
       } else {
@@ -418,18 +420,19 @@ void fsmCollisionDetection() {
     }
   }
 
-  if (SensedCollision){
+  //IR Obstacle avoidance state machine
+  if (sensedCollision){
     lineFollowingState = OFFLINE;
     lineFollowing_ForwardCounter = 0;
     lineFollowing_StopCounter = 0;
 
     switch (driveState){
     case DRIVE_STRAIGHT:
-      ActionRobotDrive = DRIVE_STRAIGHT;
+      actionRobotDrive = DRIVE_STRAIGHT;
       //State transition logic
-      if (SensedCollision == DETECTION_NO) {
+      if (sensedCollision == DETECTION_NO) {
         driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-      } else if (SensedCollision == DETECTION_YES){
+      } else if (sensedCollision == DETECTION_YES){
         if (!r_IRAvoidanceSensorState){
           driveState = DRIVE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
@@ -439,13 +442,13 @@ void fsmCollisionDetection() {
       break;
 
     case DRIVE_LEFT:
-      ActionRobotDrive = DRIVE_LEFT;
-      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      actionRobotDrive = DRIVE_LEFT;
+      actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
-      if (SensedCollision == DETECTION_NO) {
+      if (sensedCollision == DETECTION_NO) {
         driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-      } else if (SensedCollision == DETECTION_YES)
+      } else if (sensedCollision == DETECTION_YES)
       {
         if (!r_IRAvoidanceSensorState){
           driveState = DRIVE_LEFT;
@@ -460,13 +463,13 @@ void fsmCollisionDetection() {
       break;
 
       case DRIVE_RIGHT:
-      ActionRobotDrive = DRIVE_RIGHT;
-      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      actionRobotDrive = DRIVE_RIGHT;
+      actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
-      if (SensedCollision == DETECTION_NO) {
+      if (sensedCollision == DETECTION_NO) {
         driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
-      } else if (SensedCollision == DETECTION_YES){
+      } else if (sensedCollision == DETECTION_YES){
         if (!l_IRAvoidanceSensorState){
           driveState = DRIVE_RIGHT;
         } else if (!r_IRAvoidanceSensorState){
@@ -488,93 +491,98 @@ void fsmCollisionDetection() {
   }
 }
 
-bool isLineDetected(){
-  if (Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+// is_line_detected()
+// Returns whether or not any of the line following IR sensors are detecting anything
+bool is_line_detected(){
+  if (lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
     return false;
   }else{
     return true;
   }
 }
 
-void updateDriveState(){
+// update_drive_state()
+// update drive state dpending on perception information
+void update_drive_state(){
   if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedLastStep){
-    ActionRobotDrive = DRIVE_STRAIGHT;
+    actionRobotDrive = DRIVE_STRAIGHT;
     turnedLastStep = false;
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
-    ActionRobotDrive = DRIVE_LEFT;
-    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    actionRobotDrive = DRIVE_LEFT;
+    actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     turnedLastStep = true;
   }else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
-    ActionRobotDrive = DRIVE_RIGHT;
-    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    actionRobotDrive = DRIVE_RIGHT;
+    actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     turnedLastStep = true;
   }
 }
 
-void DoLineFollowing(){
-  if (DebugStateOutput) {
+// Line following control based on perception information
+void do_line_following(){
+  if (debugStateOutput) {
     Serial.println("Do line following");
   }
-  // Line_Sensor1 - Far right
-  // Line_Sensor2 - Mid right
-  // Line_Sensor3 - Mid left
-  // Line_Sensor4 - Far left
-  if(Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
+  // lineSensor1 - Far right
+  // lineSensor2 - Mid right
+  // lineSensor3 - Mid left
+  // lineSensor4 - Far left
+  if(lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
     // forward();    
-    ActionRobotDrive = DRIVE_STRAIGHT;
-  }else if(Line_Sensor4 == HIGH && Line_Sensor3 == HIGH && Line_Sensor2 == HIGH && Line_Sensor1 == HIGH){
+    actionRobotDrive = DRIVE_STRAIGHT;
+  }else if(lineSensor4 == HIGH && lineSensor3 == HIGH && lineSensor2 == HIGH && lineSensor1 == HIGH){
     // stop();    
-    ActionRobotDrive = DRIVE_STOP;
-    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    actionRobotDrive = DRIVE_STOP;
+    actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     lineFollowingState = LOCKED;
 
-  }else if(Line_Sensor3 == HIGH || Line_Sensor4 == HIGH){
-    ActionRobotDrive = DRIVE_LEFT;
-    ActionRobotTurnSpeed = SPEED_TURN_SLOW;
-    if (Line_Sensor2 == HIGH){
-      ActionRobotDrive = DRIVE_STRAIGHT;
+  }else if(lineSensor3 == HIGH || lineSensor4 == HIGH){
+    actionRobotDrive = DRIVE_LEFT;
+    actionRobotTurnSpeed = SPEED_TURN_SLOW;
+    if (lineSensor2 == HIGH){
+      actionRobotDrive = DRIVE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
-      if (Line_Sensor1 == HIGH){
-        ActionRobotDrive == DRIVE_RIGHT;
-        ActionRobotTurnSpeed = SPEED_TURN_SLOW;
+      if (lineSensor1 == HIGH){
+        actionRobotDrive == DRIVE_RIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
-    if (Line_Sensor4 == HIGH){
-      ActionRobotDrive = DRIVE_LEFT;
-      ActionRobotTurnSpeed = SPEED_TURN_SLOW;
+    if (lineSensor4 == HIGH){
+      actionRobotDrive = DRIVE_LEFT;
+      actionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
-  } else if (Line_Sensor2 == HIGH || Line_Sensor1 == HIGH){
-    ActionRobotDrive = DRIVE_RIGHT;
-    ActionRobotTurnSpeed = SPEED_TURN_SLOW;
-    if (Line_Sensor3 == HIGH){
-      ActionRobotDrive = DRIVE_STRAIGHT;
+  } else if (lineSensor2 == HIGH || lineSensor1 == HIGH){
+    actionRobotDrive = DRIVE_RIGHT;
+    actionRobotTurnSpeed = SPEED_TURN_SLOW;
+    if (lineSensor3 == HIGH){
+      actionRobotDrive = DRIVE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
-      if (Line_Sensor4 == HIGH){
-        ActionRobotDrive == DRIVE_LEFT;
-        ActionRobotTurnSpeed = SPEED_TURN_SLOW;
+      if (lineSensor4 == HIGH){
+        actionRobotDrive == DRIVE_LEFT;
+        actionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
-    if (Line_Sensor1 == HIGH){
-      ActionRobotDrive = DRIVE_RIGHT;
-      ActionRobotTurnSpeed = SPEED_TURN_SLOW;
+    if (lineSensor1 == HIGH){
+      actionRobotDrive = DRIVE_RIGHT;
+      actionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
   }
-  if (Line_Sensor4 == HIGH && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
-    ActionRobotDrive = DRIVE_LEFT;
-    ActionRobotTurnSpeed = SPEED_TURN_FAST;
+  if (lineSensor4 == HIGH && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
+    actionRobotDrive = DRIVE_LEFT;
+    actionRobotTurnSpeed = SPEED_TURN_FAST;
   }
 
-  if (Line_Sensor4 == LOW && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == HIGH){
-    ActionRobotDrive = DRIVE_RIGHT;
-    ActionRobotTurnSpeed = SPEED_TURN_FAST;
+  if (lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == HIGH){
+    actionRobotDrive = DRIVE_RIGHT;
+    actionRobotTurnSpeed = SPEED_TURN_FAST;
   }
 }
 
 /**********************************************************************************************************
   Robot ACTION - implementing the decisions from planning to specific actions
  ********************************************************************/
-void RobotAction() {
-  switch(ActionRobotDrive) {
+void robot_action() {
+  switch(actionRobotDrive) {
     case DRIVE_STOP:
       analogWrite(H_BRIDGE_ENA, 0);
       analogWrite(H_BRIDGE_ENB, 0);
@@ -582,8 +590,8 @@ void RobotAction() {
       break;
 
     case DRIVE_STRAIGHT:
-      analogWrite(H_BRIDGE_ENA, ActionRobotSpeed);//Set the speed of ENA
-      analogWrite(H_BRIDGE_ENB, ActionRobotSpeed);//Set the speed of ENB
+      analogWrite(H_BRIDGE_ENA, actionRobotSpeed);//Set the speed of ENA
+      analogWrite(H_BRIDGE_ENB, actionRobotSpeed);//Set the speed of ENB
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
       digitalWrite(IN3, HIGH);
@@ -592,8 +600,8 @@ void RobotAction() {
       break;
 
     case DRIVE_RIGHT:
-      analogWrite(H_BRIDGE_ENA, ActionRobotTurnSpeed);//Set the speed of ENA
-      analogWrite(H_BRIDGE_ENB, ActionRobotTurnSpeed);//Set the speed of ENB
+      analogWrite(H_BRIDGE_ENA, actionRobotTurnSpeed);//Set the speed of ENA
+      analogWrite(H_BRIDGE_ENB, actionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, HIGH);
       digitalWrite(IN2, LOW);
       digitalWrite(IN3, HIGH);
@@ -602,8 +610,8 @@ void RobotAction() {
       break;
 
     case DRIVE_LEFT:
-      analogWrite(H_BRIDGE_ENA, ActionRobotTurnSpeed);//Set the speed of ENA
-      analogWrite(H_BRIDGE_ENB, ActionRobotTurnSpeed);//Set the speed of ENB
+      analogWrite(H_BRIDGE_ENA, actionRobotTurnSpeed);//Set the speed of ENA
+      analogWrite(H_BRIDGE_ENB, actionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
       digitalWrite(IN3, LOW);
