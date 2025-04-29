@@ -14,8 +14,7 @@
 
   Version History
   1.0.0       25 February 2025    Creation by Tyler Perkins with
-                                  inspiration from ECEN 240 &
-                                  ChatGPT
+                                  inspiration from ECEn 240
 
  ********************************************************************/
 
@@ -59,6 +58,7 @@ const int DebugStateOutput = true; // Change false to true for debug messages
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 13  // Arduino pin tied to echo pin on the ultrasonic sensor.
 #define ULTRASONIC_UPDATE_COUNT 20
+#define ARBITRARY_UPDATE_DELAY 10
 
 // Servo pin
 #define SERVO_PIN A0
@@ -137,7 +137,8 @@ int ActionRobotDrive = DRIVE_STRAIGHT;
 // Speed
 // 130 - 255 are generally good on a full battery (on smooth surface)
 #define SPEED_STRAIGHT_DEFAULT 140
-#define SPEED_TURN_DEFAULT 220
+#define SPEED_TURN_SLOW 180 // Previously 220
+#define SPEED_TURN_DEFAULT 220 // Previously 220
 #define SPEED_TURN_FAST 240
 
 int ActionRobotSpeed = SPEED_STRAIGHT_DEFAULT; // Default is 120
@@ -148,7 +149,7 @@ int lineFollowing_StopCounter = 0;
 int lineFollowing_ForwardCounter = 0;
 
 #define LINEFOLLOWING_STOP_TIME 100
-#define LINEFOLLOWING_FORWARD_TIME 10
+#define LINEFOLLOWING_FORWARD_TIME 5
 
 bool lineFollowingDisabled = false;
 int lineFollowingDisabled_Count = 0;
@@ -412,6 +413,7 @@ void fsmCollisionDetection() {
         lineFollowingState = OFFLINE;
         lineFollowing_ForwardCounter = 0;
         lineFollowing_StopCounter = 0;
+        updateUltrasonicSensorCounter = ULTRASONIC_UPDATE_COUNT - ARBITRARY_UPDATE_DELAY;
       }
     }
   }
@@ -528,33 +530,33 @@ void DoLineFollowing(){
 
   }else if(Line_Sensor3 == HIGH || Line_Sensor4 == HIGH){
     ActionRobotDrive = DRIVE_LEFT;
-    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    ActionRobotTurnSpeed = SPEED_TURN_SLOW;
     if (Line_Sensor2 == HIGH){
       ActionRobotDrive = DRIVE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
       if (Line_Sensor1 == HIGH){
         ActionRobotDrive == DRIVE_RIGHT;
-        ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+        ActionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
     if (Line_Sensor4 == HIGH){
       ActionRobotDrive = DRIVE_LEFT;
-      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      ActionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
   } else if (Line_Sensor2 == HIGH || Line_Sensor1 == HIGH){
     ActionRobotDrive = DRIVE_RIGHT;
-    ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+    ActionRobotTurnSpeed = SPEED_TURN_SLOW;
     if (Line_Sensor3 == HIGH){
       ActionRobotDrive = DRIVE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
       if (Line_Sensor4 == HIGH){
         ActionRobotDrive == DRIVE_LEFT;
-        ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+        ActionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
     if (Line_Sensor1 == HIGH){
       ActionRobotDrive = DRIVE_RIGHT;
-      ActionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      ActionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
   }
   if (Line_Sensor4 == HIGH && Line_Sensor3 == LOW && Line_Sensor2 == LOW && Line_Sensor1 == LOW){
