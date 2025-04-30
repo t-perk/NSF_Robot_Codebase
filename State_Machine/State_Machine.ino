@@ -57,7 +57,7 @@ const int debugStateOutput = true; // Change false to true for debug messages
 // Ultrasonic sensor pins
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 13  // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define ULTRASONIC_UPDATE_COUNT 30
+#define ULTRASONIC_UPDATE_COUNT 20
 #define ARBITRARY_UPDATE_DELAY 10
 
 // Servo pin
@@ -87,10 +87,9 @@ Servo myServo;
 #define DETECTION_YES   1
 
 // Motor speed definitions
-// 130 - 255 are generally good on a full battery (on smooth surface)
-// 160 - 255 good on full battery (with carpet)
+// 120 - 255 are generally good on a full battery
 #define SPEED_STOP      0
-#define SPEED_STRAIGHT_DEFAULT 140
+#define SPEED_STRAIGHT_DEFAULT 120
 #define SPEED_TURN_SLOW 180 // Previously 220
 #define SPEED_TURN_DEFAULT 220 // Previously 220
 #define SPEED_TURN_FAST 240
@@ -121,10 +120,12 @@ int leftUltrasonicDistance;
 int rightUltrasonicDistance;
 int updateUltrasonicSensorCounter = 0;
 bool sweepRequest = true;
+bool forwardToggle = true;
+int checkPointMillis = 0;
 bool turnedLastStep = false;
 int turnedCount = 0;
 
-#define TURN_COUNT 5
+#define CYCLE_TIME_MILLIS 30
 
 // Line following IR sensors
 int lineSensor1;
@@ -142,6 +143,7 @@ int lineFollowing_ForwardCounter = 0;
 bool lineFollowingDisabled = false;
 int lineFollowingDisabled_Count = 0;
 int lineFollowingState = 0;
+int conseqDetections = 0;
 
 // Line following states
 #define OFFLINE 0
@@ -177,6 +179,7 @@ void setup() {
   straightUltrasonicDistance = 0;
   leftUltrasonicDistance = 0;
   rightUltrasonicDistance = 0;
+  checkPointMillis = millis();
   
   // //Set up output pins
   pinMode(H_BRIDGE_ENA, OUTPUT);
@@ -240,7 +243,6 @@ void loop() {
     Serial.print(lineFollowing_StopCounter);
     Serial.print(" Foward: ");
     Serial.println(lineFollowing_ForwardCounter);
-    
   }
   
   robot_planning(); // PLANNING
@@ -257,7 +259,7 @@ void loop() {
   if (debugStateOutput){
     delay(1000);
   }
-  delay(10);
+  // delay(10);
 }
 
 /**********************************************************************************************************
@@ -291,7 +293,7 @@ void robot_perception() {
   // Serial.println()
 
   // Collision Sensor
-  if (is_collision()) {   // Add code in is_collision() function for lab 2 milestone 1
+  if (is_collision()) {
     sensedCollision = DETECTION_YES;
   } else {
     sensedCollision = DETECTION_NO;
@@ -366,7 +368,7 @@ bool is_collision() {
 void robot_planning(void) {
   // The planning FSMs that are used by the robot to assign actions
   // based on the sensing from the Perception stage.
-  fsm_collision_detection(); // Milestone 1
+  fsm_collision_detection();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -376,6 +378,7 @@ void robot_planning(void) {
 void fsm_collision_detection() {
   static int collisionDetectionState = 0;
   static int driveState = 3;
+  // updateUltrasonicSensorCounter++;
 
   // Driving direction definitions
   // #define DRIVE_STOP      0
@@ -383,9 +386,13 @@ void fsm_collision_detection() {
   // #define DRIVE_RIGHT     2
   // #define DRIVE_STRAIGHT  3
 
+  if (!is_line_detected()){
+    conseqDetections = 0;
+  }
+
   // We only want to follow the sound sweep information if there 
   // is not a line currently being detected.
-  if (!is_line_detected() && lineFollowingState == OFFLINE && !sensedCollision){
+  if (lineFollowingState == OFFLINE && !sensedCollision){
     if (updateUltrasonicSensorCounter >= ULTRASONIC_UPDATE_COUNT){
       actionRobotDrive = DRIVE_STOP;
       if (!sweepRequest){
@@ -393,16 +400,21 @@ void fsm_collision_detection() {
       }
       return;
     }else{
-      update_drive_state();
       updateUltrasonicSensorCounter++;
+      update_drive_state();
     }
   }
-
+  
   // Line following logic depending on line following state
   if ((is_line_detected() || lineFollowingState == ONLINE || lineFollowingState == LOCKED) && !sensedCollision){
     if (lineFollowingState == OFFLINE){
-      lineFollowingState = ONLINE;
-      do_line_following();
+      if (conseqDetections > 3){
+        lineFollowingState = ONLINE;
+        conseqDetections = 0;
+        do_line_following();
+      }else{
+        conseqDetections++;
+      }
     }else if (lineFollowingState == ONLINE){
       do_line_following();
 
@@ -508,23 +520,57 @@ bool is_line_detected(){
 // update_drive_state()
 // update drive state dpending on perception information
 void update_drive_state(){
-  if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedLastStep){
-  // if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedCount >= TURN_COUNT){
-  // if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance))){
+  int currentMillis = millis();
+
+  if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance))){
     actionRobotDrive = DRIVE_STRAIGHT;
     actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
-    turnedLastStep = false;
-    turnedCount = -1*TURN_COUNT;
+
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
-    actionRobotDrive = DRIVE_LEFT;
-    actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
-    turnedLastStep = true;
-    turnedCount++;
-  }else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
-    actionRobotDrive = DRIVE_RIGHT;
-    actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
-    turnedLastStep = true;
-    turnedCount++;
+    if (forwardToggle){
+      if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
+        actionRobotDrive = DRIVE_STRAIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
+      }else{
+        checkPointMillis = millis();
+        forwardToggle = !forwardToggle;
+        actionRobotDrive = DRIVE_LEFT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }else{
+      if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
+        actionRobotDrive = DRIVE_LEFT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
+      }else{
+        checkPointMillis = millis();
+        forwardToggle = !forwardToggle;
+        actionRobotDrive = DRIVE_STRAIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }
+
+  } else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
+    if (forwardToggle){
+      if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
+        actionRobotDrive = DRIVE_STRAIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
+      }else{
+        checkPointMillis = millis();
+        forwardToggle = !forwardToggle;
+        actionRobotDrive = DRIVE_RIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }else{
+      if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
+        actionRobotDrive = DRIVE_RIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
+      }else{
+        checkPointMillis = millis();
+        forwardToggle = !forwardToggle;
+        actionRobotDrive = DRIVE_STRAIGHT;
+        actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
+      }
+    }
   }
 }
 
@@ -540,6 +586,7 @@ void do_line_following(){
   if(lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
     // forward();    
     actionRobotDrive = DRIVE_STRAIGHT;
+    // This is where you'd add the timeout
   }else if(lineSensor4 == HIGH && lineSensor3 == HIGH && lineSensor2 == HIGH && lineSensor1 == HIGH){
     // stop();    
     actionRobotDrive = DRIVE_STOP;
