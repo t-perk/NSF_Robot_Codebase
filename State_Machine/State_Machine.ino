@@ -57,7 +57,7 @@ const int debugStateOutput = true; // Change false to true for debug messages
 // Ultrasonic sensor pins
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 13  // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define ULTRASONIC_UPDATE_COUNT 20
+#define ULTRASONIC_UPDATE_COUNT 30
 #define ARBITRARY_UPDATE_DELAY 10
 
 // Servo pin
@@ -122,6 +122,9 @@ int rightUltrasonicDistance;
 int updateUltrasonicSensorCounter = 0;
 bool sweepRequest = true;
 bool turnedLastStep = false;
+int turnedCount = 0;
+
+#define TURN_COUNT 5
 
 // Line following IR sensors
 int lineSensor1;
@@ -254,7 +257,7 @@ void loop() {
   if (debugStateOutput){
     delay(1000);
   }
-  // delay(1);
+  delay(10);
 }
 
 /**********************************************************************************************************
@@ -285,6 +288,7 @@ void robot_perception() {
     Serial.print("UltrasonicSensorCounter: ");
     Serial.println(updateUltrasonicSensorCounter);
   }
+  // Serial.println()
 
   // Collision Sensor
   if (is_collision()) {   // Add code in is_collision() function for lab 2 milestone 1
@@ -453,9 +457,9 @@ void fsm_collision_detection() {
         if (!r_IRAvoidanceSensorState){
           driveState = DRIVE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
-          if (!r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
+          if (!r_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
             driveState = DRIVE_LEFT;
-          } else if (r_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
+          } else if (r_IRAvoidanceSensorState){
             driveState = DRIVE_RIGHT;
           }
         }
@@ -473,9 +477,9 @@ void fsm_collision_detection() {
         if (!l_IRAvoidanceSensorState){
           driveState = DRIVE_RIGHT;
         } else if (!r_IRAvoidanceSensorState){
-          if (!l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){// If they are both reading a collision, keep r 
+          if (!l_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
             driveState = DRIVE_RIGHT;
-          } else if (l_IRAvoidanceSensorState && (straightUltrasonicDistance < STOP_DISTANCE)){
+          } else if (l_IRAvoidanceSensorState){
             driveState = DRIVE_LEFT;
           }
         }
@@ -505,16 +509,22 @@ bool is_line_detected(){
 // update drive state dpending on perception information
 void update_drive_state(){
   if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedLastStep){
+  // if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance)) || turnedCount >= TURN_COUNT){
+  // if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance))){
     actionRobotDrive = DRIVE_STRAIGHT;
+    actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
     turnedLastStep = false;
+    turnedCount = -1*TURN_COUNT;
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
     actionRobotDrive = DRIVE_LEFT;
     actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     turnedLastStep = true;
+    turnedCount++;
   }else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
     actionRobotDrive = DRIVE_RIGHT;
     actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     turnedLastStep = true;
+    turnedCount++;
   }
 }
 
