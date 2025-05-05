@@ -57,7 +57,7 @@ const int debugStateOutput = true; // Change false to true for debug messages
 // Ultrasonic sensor pins
 #define TRIGGER_PIN 12  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN 13  // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define ULTRASONIC_UPDATE_COUNT 20
+#define ULTRASONIC_UPDATE_COUNT 30
 #define ARBITRARY_UPDATE_DELAY 10
 
 // Servo pin
@@ -504,6 +504,10 @@ void fsm_collision_detection() {
           }
         }
       }
+      break;
+
+      case STATE_STOP:
+      currentDriveState = STATE_STRAIGHT;
       break;
 
       default: // error handling
