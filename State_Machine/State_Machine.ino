@@ -98,11 +98,6 @@ Servo myServo;
 #define COLLISION_OFF 0
 #define COLLISION_ON  1
 
-// Driving direction definitions
-#define DRIVE_STOP      0
-#define DRIVE_LEFT      1
-#define DRIVE_RIGHT     2
-#define DRIVE_STRAIGHT  3
 
 /***********************************************************/
 // Global variables that define PERCEPTION and initialization
@@ -156,25 +151,23 @@ int conseqDetections = 0;
 // Collision Actions (using Definitions)
 int actionCollision = COLLISION_OFF;
 
-// Main motors Action (using Definitions)
-int actionRobotDrive = DRIVE_STRAIGHT;
-
+// Main motors Action (using Definitions
 int actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
 int actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
 // Driving direction definitions
-// #define DRIVE_STOP      0
-// #define DRIVE_LEFT      1
-// #define DRIVE_RIGHT     2
-// #define DRIVE_STRAIGHT  3
-typedef enum {
+// #define STATE_STOP      0
+// #define STATE_LEFT      1
+// #define STATE_RIGHT     2
+// #define STATE_STRAIGHT  3
+enum state_drive{
   STATE_STOP,
   STATE_LEFT,
   STATE_RIGHT,
   STATE_STRAIGHT
-} state_drive;
+};
 
-state_drive current_drive_state;
+static enum state_drive currentDriveState;
 
 /********************************************************************
   SETUP function - this gets executed at power up, or after a reset
@@ -216,7 +209,7 @@ void setup() {
   pinMode(TRIGGER_PIN, OUTPUT); // pulse sent out through TRIGGER_PIN    
   pinMode(ECHO_PIN, INPUT); // return signal read through ECHO_PIN
 
-  current_drive_state = STATE_STRAIGHT;
+  currentDriveState = STATE_STRAIGHT;
 }
 
 /********************************************************************
@@ -266,8 +259,8 @@ void loop() {
     Serial.println("\n------------------------------");
     Serial.println("PLANNING");
 
-    Serial.print("actionRobotDrive: ");
-    Serial.println(actionRobotDrive);
+    Serial.print("currentDriveState: ");
+    Serial.println(currentDriveState);
   }
 
   robot_action(); // ACTION
@@ -396,10 +389,10 @@ void fsm_collision_detection() {
   // updateUltrasonicSensorCounter++;
 
   // Driving direction definitions
-  // #define DRIVE_STOP      0
-  // #define DRIVE_LEFT      1
-  // #define DRIVE_RIGHT     2
-  // #define DRIVE_STRAIGHT  3
+  // #define STATE_STOP      0
+  // #define STATE_LEFT      1
+  // #define STATE_RIGHT     2
+  // #define STATE_STRAIGHT  3
 
   if (!is_line_detected()){
     conseqDetections = 0;
@@ -409,7 +402,7 @@ void fsm_collision_detection() {
   // is not a line currently being detected.
   if (lineFollowingState == OFFLINE && !sensedCollision){
     if (updateUltrasonicSensorCounter >= ULTRASONIC_UPDATE_COUNT){
-      actionRobotDrive = DRIVE_STOP;
+      currentDriveState = STATE_STOP;
       if (!sweepRequest){
         sweepRequest = true;
       }
@@ -435,11 +428,11 @@ void fsm_collision_detection() {
 
     }else if (lineFollowingState == LOCKED){
       if (lineFollowing_StopCounter <= LINEFOLLOWING_STOP_COUNT){
-        actionRobotDrive = DRIVE_STOP;
+        currentDriveState = STATE_STOP;
         lineFollowing_StopCounter++;
         return;
       } else if (lineFollowing_ForwardCounter <= LINEFOLLOWING_FORWARD_COUNT){
-        actionRobotDrive = DRIVE_STRAIGHT;
+        currentDriveState = STATE_STRAIGHT;
         lineFollowing_ForwardCounter++;
         return;
       } else {
@@ -457,57 +450,57 @@ void fsm_collision_detection() {
     lineFollowing_ForwardCounter = 0;
     lineFollowing_StopCounter = 0;
 
-    switch (current_drive_state){
+    switch (currentDriveState){
     case STATE_STRAIGHT:
-      actionRobotDrive = DRIVE_STRAIGHT;
+      currentDriveState = STATE_STRAIGHT;
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
+        currentDriveState = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES){
         if (!r_IRAvoidanceSensorState){
-          current_drive_state = STATE_LEFT;
+          currentDriveState = STATE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
-          current_drive_state = STATE_RIGHT;
+          currentDriveState = STATE_RIGHT;
         }
       }
       break;
 
     case STATE_LEFT:
-      actionRobotDrive = DRIVE_LEFT;
+      currentDriveState = STATE_LEFT;
       actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
+        currentDriveState = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES)
       {
         if (!r_IRAvoidanceSensorState){
-          current_drive_state = STATE_LEFT;
+          currentDriveState = STATE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
           if (!r_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
-            current_drive_state = STATE_LEFT;
+            currentDriveState = STATE_LEFT;
           } else if (r_IRAvoidanceSensorState){
-            current_drive_state = STATE_RIGHT;
+            currentDriveState = STATE_RIGHT;
           }
         }
       }
       break;
 
       case STATE_RIGHT:
-      actionRobotDrive = DRIVE_RIGHT;
+      currentDriveState = STATE_RIGHT;
       actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
+        currentDriveState = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES){
         if (!l_IRAvoidanceSensorState){
-          current_drive_state = STATE_RIGHT;
+          currentDriveState = STATE_RIGHT;
         } else if (!r_IRAvoidanceSensorState){
           if (!l_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
-            current_drive_state = STATE_RIGHT;
+            currentDriveState = STATE_RIGHT;
           } else if (l_IRAvoidanceSensorState){
-            current_drive_state = STATE_LEFT;
+            currentDriveState = STATE_LEFT;
           }
         }
       }
@@ -515,7 +508,7 @@ void fsm_collision_detection() {
 
       default: // error handling
       {
-        current_drive_state = STATE_STOP;
+        currentDriveState = STATE_STOP;
       }
       break;
     }
@@ -538,28 +531,28 @@ void update_drive_state(){
   int currentMillis = millis();
 
   if (((straightUltrasonicDistance > leftUltrasonicDistance) && (straightUltrasonicDistance > rightUltrasonicDistance))){
-    actionRobotDrive = DRIVE_STRAIGHT;
+    currentDriveState = STATE_STRAIGHT;
     actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
 
   }else if((leftUltrasonicDistance > straightUltrasonicDistance) && (leftUltrasonicDistance > rightUltrasonicDistance)){
     if (forwardToggle){
       if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
-        actionRobotDrive = DRIVE_STRAIGHT;
+        currentDriveState = STATE_STRAIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
       }else{
         checkPointMillis = millis();
         forwardToggle = !forwardToggle;
-        actionRobotDrive = DRIVE_LEFT;
+        currentDriveState = STATE_LEFT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
       }
     }else{
       if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
-        actionRobotDrive = DRIVE_LEFT;
+        currentDriveState = STATE_LEFT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
       }else{
         checkPointMillis = millis();
         forwardToggle = !forwardToggle;
-        actionRobotDrive = DRIVE_STRAIGHT;
+        currentDriveState = STATE_STRAIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
       }
     }
@@ -567,22 +560,22 @@ void update_drive_state(){
   } else if((rightUltrasonicDistance > straightUltrasonicDistance) && (rightUltrasonicDistance > leftUltrasonicDistance)){
     if (forwardToggle){
       if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
-        actionRobotDrive = DRIVE_STRAIGHT;
+        currentDriveState = STATE_STRAIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
       }else{
         checkPointMillis = millis();
         forwardToggle = !forwardToggle;
-        actionRobotDrive = DRIVE_RIGHT;
+        currentDriveState = STATE_RIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
       }
     }else{
       if ((currentMillis - checkPointMillis) <= CYCLE_TIME_MILLIS){
-        actionRobotDrive = DRIVE_RIGHT;
+        currentDriveState = STATE_RIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;    
       }else{
         checkPointMillis = millis();
         forwardToggle = !forwardToggle;
-        actionRobotDrive = DRIVE_STRAIGHT;
+        currentDriveState = STATE_STRAIGHT;
         actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
       }
     }
@@ -600,52 +593,52 @@ void do_line_following(){
   // lineSensor4 - Far left
   if(lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
     // forward();    
-    actionRobotDrive = DRIVE_STRAIGHT;
+    currentDriveState = STATE_STRAIGHT;
     // This is where you'd add the timeout
   }else if(lineSensor4 == HIGH && lineSensor3 == HIGH && lineSensor2 == HIGH && lineSensor1 == HIGH){
     // stop();    
-    actionRobotDrive = DRIVE_STOP;
+    currentDriveState = STATE_STOP;
     actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
     lineFollowingState = LOCKED;
 
   }else if(lineSensor3 == HIGH || lineSensor4 == HIGH){
-    actionRobotDrive = DRIVE_LEFT;
+    currentDriveState = STATE_LEFT;
     actionRobotTurnSpeed = SPEED_TURN_SLOW;
     if (lineSensor2 == HIGH){
-      actionRobotDrive = DRIVE_STRAIGHT;
+      currentDriveState = STATE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
       if (lineSensor1 == HIGH){
-        actionRobotDrive == DRIVE_RIGHT;
+        currentDriveState == STATE_RIGHT;
         actionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
     if (lineSensor4 == HIGH){
-      actionRobotDrive = DRIVE_LEFT;
+      currentDriveState = STATE_LEFT;
       actionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
   } else if (lineSensor2 == HIGH || lineSensor1 == HIGH){
-    actionRobotDrive = DRIVE_RIGHT;
+    currentDriveState = STATE_RIGHT;
     actionRobotTurnSpeed = SPEED_TURN_SLOW;
     if (lineSensor3 == HIGH){
-      actionRobotDrive = DRIVE_STRAIGHT;
+      currentDriveState = STATE_STRAIGHT;
       // If two of the opposing sensors are high, then that side outvotes the other side
       if (lineSensor4 == HIGH){
-        actionRobotDrive == DRIVE_LEFT;
+        currentDriveState == STATE_LEFT;
         actionRobotTurnSpeed = SPEED_TURN_SLOW;
       }
     }
     if (lineSensor1 == HIGH){
-      actionRobotDrive = DRIVE_RIGHT;
+      currentDriveState = STATE_RIGHT;
       actionRobotTurnSpeed = SPEED_TURN_SLOW;
     }
   }
   if (lineSensor4 == HIGH && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == LOW){
-    actionRobotDrive = DRIVE_LEFT;
+    currentDriveState = STATE_LEFT;
     actionRobotTurnSpeed = SPEED_TURN_FAST;
   }
 
   if (lineSensor4 == LOW && lineSensor3 == LOW && lineSensor2 == LOW && lineSensor1 == HIGH){
-    actionRobotDrive = DRIVE_RIGHT;
+    currentDriveState = STATE_RIGHT;
     actionRobotTurnSpeed = SPEED_TURN_FAST;
   }
 }
@@ -654,14 +647,14 @@ void do_line_following(){
   Robot ACTION - implementing the decisions from planning to specific actions
  ********************************************************************/
 void robot_action() {
-  switch(actionRobotDrive) {
-    case DRIVE_STOP:
+  switch(currentDriveState) {
+    case STATE_STOP:
       analogWrite(H_BRIDGE_ENA, 0);
       analogWrite(H_BRIDGE_ENB, 0);
       Serial.println("Stop");
       break;
 
-    case DRIVE_STRAIGHT:
+    case STATE_STRAIGHT:
       analogWrite(H_BRIDGE_ENA, actionRobotSpeed);//Set the speed of ENA
       analogWrite(H_BRIDGE_ENB, actionRobotSpeed);//Set the speed of ENB
       digitalWrite(IN1, LOW);
@@ -671,7 +664,7 @@ void robot_action() {
       Serial.println("Forward");
       break;
 
-    case DRIVE_RIGHT:
+    case STATE_RIGHT:
       analogWrite(H_BRIDGE_ENA, actionRobotTurnSpeed);//Set the speed of ENA
       analogWrite(H_BRIDGE_ENB, actionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, HIGH);
@@ -681,7 +674,7 @@ void robot_action() {
       Serial.println("Right");
       break;
 
-    case DRIVE_LEFT:
+    case STATE_LEFT:
       analogWrite(H_BRIDGE_ENA, actionRobotTurnSpeed);//Set the speed of ENA
       analogWrite(H_BRIDGE_ENB, actionRobotTurnSpeed);//Set the speed of ENB
       digitalWrite(IN1, LOW);

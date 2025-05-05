@@ -57,7 +57,6 @@ Servo myServo;
 // Parameter to define when the ultrasonic sensor detects a collision
 #define STOP_DISTANCE 20
 
-
 // Parameters for servo control as well as instantiation
 #define SERVO_START_ANGLE 90
 #define SERVO_LEFT_LIMIT 180//135
