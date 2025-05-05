@@ -162,6 +162,20 @@ int actionRobotDrive = DRIVE_STRAIGHT;
 int actionRobotSpeed = SPEED_STRAIGHT_DEFAULT;
 int actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
+// Driving direction definitions
+// #define DRIVE_STOP      0
+// #define DRIVE_LEFT      1
+// #define DRIVE_RIGHT     2
+// #define DRIVE_STRAIGHT  3
+typedef enum {
+  STATE_STOP,
+  STATE_LEFT,
+  STATE_RIGHT,
+  STATE_STRAIGHT
+} state_drive;
+
+state_drive current_drive_state;
+
 /********************************************************************
   SETUP function - this gets executed at power up, or after a reset
  ********************************************************************/
@@ -201,6 +215,8 @@ void setup() {
   //Set up rangefinder
   pinMode(TRIGGER_PIN, OUTPUT); // pulse sent out through TRIGGER_PIN    
   pinMode(ECHO_PIN, INPUT); // return signal read through ECHO_PIN
+
+  current_drive_state = STATE_STRAIGHT;
 }
 
 /********************************************************************
@@ -377,7 +393,6 @@ void robot_planning(void) {
 ////////////////////////////////////////////////////////////////////
 void fsm_collision_detection() {
   static int collisionDetectionState = 0;
-  static int driveState = 3;
   // updateUltrasonicSensorCounter++;
 
   // Driving direction definitions
@@ -442,57 +457,57 @@ void fsm_collision_detection() {
     lineFollowing_ForwardCounter = 0;
     lineFollowing_StopCounter = 0;
 
-    switch (driveState){
-    case DRIVE_STRAIGHT:
+    switch (current_drive_state){
+    case STATE_STRAIGHT:
       actionRobotDrive = DRIVE_STRAIGHT;
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES){
         if (!r_IRAvoidanceSensorState){
-          driveState = DRIVE_LEFT;
+          current_drive_state = STATE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
-          driveState = DRIVE_RIGHT;
+          current_drive_state = STATE_RIGHT;
         }
       }
       break;
 
-    case DRIVE_LEFT:
+    case STATE_LEFT:
       actionRobotDrive = DRIVE_LEFT;
       actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES)
       {
         if (!r_IRAvoidanceSensorState){
-          driveState = DRIVE_LEFT;
+          current_drive_state = STATE_LEFT;
         } else if (!l_IRAvoidanceSensorState){
           if (!r_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
-            driveState = DRIVE_LEFT;
+            current_drive_state = STATE_LEFT;
           } else if (r_IRAvoidanceSensorState){
-            driveState = DRIVE_RIGHT;
+            current_drive_state = STATE_RIGHT;
           }
         }
       }
       break;
 
-      case DRIVE_RIGHT:
+      case STATE_RIGHT:
       actionRobotDrive = DRIVE_RIGHT;
       actionRobotTurnSpeed = SPEED_TURN_DEFAULT;
 
       //State transition logic
       if (sensedCollision == DETECTION_NO) {
-        driveState = DRIVE_STRAIGHT; //if no collision, go to no collision state
+        current_drive_state = STATE_STRAIGHT; //if no collision, go to no collision state
       } else if (sensedCollision == DETECTION_YES){
         if (!l_IRAvoidanceSensorState){
-          driveState = DRIVE_RIGHT;
+          current_drive_state = STATE_RIGHT;
         } else if (!r_IRAvoidanceSensorState){
           if (!l_IRAvoidanceSensorState){// If they are both reading a collision, keep r 
-            driveState = DRIVE_RIGHT;
+            current_drive_state = STATE_RIGHT;
           } else if (l_IRAvoidanceSensorState){
-            driveState = DRIVE_LEFT;
+            current_drive_state = STATE_LEFT;
           }
         }
       }
@@ -500,7 +515,7 @@ void fsm_collision_detection() {
 
       default: // error handling
       {
-        driveState = DRIVE_STOP;
+        current_drive_state = STATE_STOP;
       }
       break;
     }
